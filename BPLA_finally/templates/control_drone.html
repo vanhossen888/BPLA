@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <title>Управление дроном</title>
+    <style>
+        .telemetry {
+            position: relative;
+            height: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            overflow-y: scroll;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Управление дроном</h1>
+        <div class="d-flex justify-content-center mb-4">
+            <button class="btn btn-success mx-2" onclick="logAction('takeoff')">Взлет</button>
+            <button class="btn btn-success mx-2" onclick="logAction('land')">Посадка</button>
+            <button class="btn btn-success mx-2" onclick="logAction('move')">Двигаться к точке</button>
+            <button class="btn btn-success mx-2" onclick="logAction('mission')">Миссия</button>
+            <button class="btn btn-success mx-2" onclick="logAction('home')">На базу</button>
+            <button class="btn btn-warning mx-2" onclick="logAction('cancel')">Отменить операции</button>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <p>Лог:</p>
+                        <div id="log" style="height: 200px; border: 1px solid #ccc; padding: 10px; overflow-y: scroll"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h2>Телеметрия дрона</h2>
+                        <div id="telemetry-data" class="telemetry">
+                            <div id="telemetry-coordinates"></div>
+                            <div id="telemetry-speed"></div>
+                            <div id="telemetry-direction"></div>
+                            <div id="telemetry-altitude"></div>
+                            <div id="telemetry-flight-time"></div>
+                            <div id="telemetry-battery-level"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex justify-content-center mb-4">
+            <form action="{{ url_for('drone_release', drone_id=drone_id) }}" method="POST">
+                <button class="btn btn-danger mx-2">Выход</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function logAction(action) {
+            let message;
+            switch (action) {
+                case 'takeoff':
+                    message = 'Дрон взлетел';
+                    break;
+                case 'land':
+                    message = 'Дрон приземлился';
+                    break;
+                case 'move':
+                    message = 'Дрон движется к заданной точке';
+                    break;
+                case 'mission':
+                    message = 'Дрон выполняет заданную миссию';
+                    break;
+                case 'home':
+                    message = 'Дрон движется на базу';
+                    break;
+                case 'cancel':
+                    message = 'Операция отменена, дрон ожидает дальнейших команд';
+                    break;
+                default:
+                    message = 'Неизвестное действие';
+            }
+            updateLog(message);
+        }
+
+        function updateLog(message) {
+            const divLog = document.getElementById("log");
+            const newLogEntry = document.createElement("p");
+            newLogEntry.textContent = message;
+
+            // Ограничиваем лог до последних N сообщений
+            if (divLog.children.length >= 20) {
+                divLog.removeChild(divLog.firstChild);
+            }
+            divLog.appendChild(newLogEntry);
+        }
+
+        function updateTelemetry(data) {
+            document.getElementById("telemetry-coordinates").textContent = `Координаты: (${data.current_latitude.toFixed(6)}, ${data.current_longitude.toFixed(6)})`;
+            document.getElementById("telemetry-speed").textContent = `Скорость: ${data.speed.toFixed(2)} м/с`;
+            document.getElementById("telemetry-direction").textContent = `Направление: ${data.direction}°`;
+            document.getElementById("telemetry-altitude").textContent = `Высота: ${data.altitude.toFixed(2)} м`;
+            document.getElementById("telemetry-flight-time").textContent = `Время полета: ${data.flight_time} с`;
+            document.getElementById("telemetry-battery-level").textContent = `Уровень заряда: ${data.battery_level.toFixed(2)} %`;
+        }
+
+        function fetchTelemetry() {
+            fetch('/telemetry')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                    })
+                .then(data => {
+                    // Обновляем данные телеметрии
+                    updateTelemetry(data.telemetry);
+                    // Обновляем лог, если нужно
+                    // updateLog(data.log); // Если лог обновляется с сервера
+                })
+                .catch(error => {
+                    console.error('Error fetching telemetry data:', error);
+                });
+        }
+
+        // Обновляем данные каждые 5 секунд (5000 мс)
+        setInterval(fetchTelemetry, 5000);
+
+        // Пример обновления телеметрии (для первоначального отображения)
+        const exampleTelemetryData = {
+            current_latitude: 55.7558,
+            current_longitude: 37.6173,
+            speed: 5.0,
+            direction: 90,
+            altitude: 100.0,
+            flight_time: 300,
+            battery_level: 75.5
+        };
+
+        updateTelemetry(exampleTelemetryData);
+    </script>
+</body>
+</html>

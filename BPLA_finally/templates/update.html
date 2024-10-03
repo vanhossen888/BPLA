@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Обновить Данные Дрона</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .btn-success {
+            background-color: #28a745;
+            border-color: #28a745;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+            border-color: #bd2130;
+        }
+        .alert {
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center">Обновить Данные Дрона</h1>
+        <form action="{{ url_for('update_drone', drone_id=drone.id) }}" method="POST">
+            <div class="form-group">
+                <label for="serial_number">Серийный номер:</label>
+                <input type="text" name="serial_number" class="form-control" value="{{ drone.serial_number }}" required>
+            </div>
+            <div class="form-group">
+                <label for="max_altitude">Максимальная высота (м):</label>
+                <input type="number" name="max_altitude" class="form-control" value="{{ drone.max_altitude }}" required>
+            </div>
+            <div class="form-group">
+                <label for="max_speed">Максимальная скорость (км/ч):</label>
+                <input type="number" name="max_speed" class="form-control" value="{{ drone.max_speed }}" required>
+            </div>
+            <div class="form-group">
+                <label for="max_flight_time">Максимальное время полета (мин):</label>
+                <input type="number" name="max_flight_time" class="form-control" value="{{ drone.max_flight_time }}" required>
+            </div>
+            <div class="form-group">
+                <label for="max_flight_dist">Максимальная дистанция полета (км):</label>
+                <input type="number" name="max_flight_dist" class="form-control" value="{{ drone.max_flight_dist }}" required>
+            </div>
+            <div class="form-group">
+                <label for="payload">Полезная нагрузка (кг):</label>
+                <input type="number" name="payload" class="form-control" value="{{ drone.payload }}" required>
+            </div>
+            <div class="form-group">
+                <label for="model">Модель:</label>
+                <input type="text" name="model" class="form-control" value="{{ drone.model }}" required>
+            </div>
+            <div class="form-group">
+                <label for="manufacturer">Производитель:</label>
+                <input type="text" name="manufacturer" class="form-control" value="{{ drone.manufacturer }}" required>
+            </div>
+            <div class="form-group">
+                <label for="battery_capacity">Вместимость батареи (мАч):</label>
+                <input type="number" name="battery_capacity" class="form-control" value="{{ drone.battery_capacity }}" required>
+            </div>
+            <div class="form-group">
+                <label for="n_rotors">Количество роторов:</label>
+                <input type="number" name="n_rotors" class="form-control" value="{{ drone.n_rotors }}" required>
+            </div>
+            <div class="form-group">
+                <label for="purchase_date">Дата покупки:</label>
+                <input type="date" name="purchase_date" class="form-control" value="{{ drone.purchase_date }}" required>
+            </div>
+            <div class="form-group">
+                <label for="year">Год выпуска:</label>
+                <input type="number" name="year" class="form-control" value="{{ drone.year }}" required>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">Обновить</button>
+        </form>
+        <button type="button" class="btn btn-danger btn-block mt-3" onclick="window.location.href='{{ url_for('list_drones') }}'">Отменить</button>
+    </div>
+</body>
+</html>
