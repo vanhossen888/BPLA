@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from functools import wraps
 import jwt
@@ -5,28 +6,28 @@ import logging
 import numpy as np
 import time
 from flask import Flask, request, redirect, url_for, render_template, flash, session, jsonify
+from flask_socketio import SocketIO, emit
 from db_modules import Drone, DBConnectionManager, SQLiteDBFactory, SQLiteIDroneRepository
 
 
-"""Логирования для вывода информации и ошибок"""
+# Логирование для вывода информации и ошибок
 logging.basicConfig(handlers=[logging.FileHandler(filename='server.log',
                                                   encoding='utf-8',
                                                   mode='a+')],
                     format='%(asctime)s - %(levelname)s - %(funcName)s: %(message)s',
-                    level=logging.DEBUG
-                    )
-
+                    level=logging.DEBUG)
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 factory = SQLiteDBFactory()
 
 
 def log_execution_time(func):
     """Декоратор для логирования времени выполнения функции"""
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         start_time = time.time()
-        result = func(*args, **kwargs)
+        result = await func(*args, **kwargs)
         end_time = time.time()
         execution_time = end_time - start_time
         logging.info(f'Функция {func.__name__} выполнена за {execution_time:.4f} секунд.')
@@ -41,25 +42,22 @@ def get_secret_key():
             cursor = conn.cursor()
             cursor.execute("SELECT key FROM tbl_secret")
             logging.warning('Получен SECRET_KEY!')
-            print(str(cursor.fetchone()[0]))
             return cursor.fetchone()[0]
     except Exception as e:
         logging.error(f'SECRET_KEY не получен! Проверьте БД! {str(e)}')
-
 
 # Установка SECRET_KEY в приложении.
 app.secret_key = get_secret_key()
 
 
 def generate_token(username):
-    """Создаем JWT-токен для указанного имени пользователя, со сроком годности 10 мин."""
+    """Создаем JWT-токен для указанного имени пользователя, со сроком годности 60 мин."""
     payload = {
         'username': username,
         'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=60)
     }
     token = jwt.encode(payload, app.secret_key, algorithm='HS256')
     logging.info(f'Сгенерирован токен для пользователя: {username}.')
-    print(token)
     return token
 
 
@@ -87,32 +85,45 @@ def check_session_token(token):
     return username  # Вернуть имя пользователя, если токен действителен
 
 
-def get_drone_status_mgn(drone_id: int):
+@socketio.on('get_drone_status')
+@log_execution_time
+async def get_drone_status(data):
+    """Асинхронная функция для получения статуса дронов."""
+    drone_id = data['drone_id']
+    try:
+        status_mgn = await asyncio.to_thread(get_drone_status_mgn, drone_id)
+        emit('drone_status_response', {'drone_id': drone_id, 'status': status_mgn})
+    except Exception as e:
+        logging.error(f'Ошибка получения статуса дрона ID: {drone_id}. {str(e)}')
+        emit('error', {'message': str(e)})
+
+
+async def get_drone_status_mgn(drone_id: int):
     """Функция для получения статуса управления дроном (lock или release)"""
     try:
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
-            status_mgn = drone_repository.get_drone_status_mgn(drone_id)
+            status_mgn = await asyncio.to_thread(drone_repository.get_drone_status_mgn, drone_id)
             logging.info(f'Получен статус управления дроном ID: {drone_id} - {status_mgn}.')
             return status_mgn
     except Exception as e:
-        logging.error(f'Не получен статус упрвления дроном ID: {drone_id}! {str(e)}')
+        logging.error(f'Не получен статус управления дроном ID: {drone_id}! {str(e)}')
 
 
-def set_drone_status_mgn(drone_id, status: str):
-    """Функция для изменения текущего статуса управления дроном (lock)"""
+async def set_drone_status_mgn(drone_id, status: str):
+    """Асинхронная функция для изменения текущего статуса управления дроном (lock)"""
     try:
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
-            drone_repository.update_drone_status_mgn(drone_id, status)
+            await asyncio.to_thread(drone_repository.update_drone_status_mgn, drone_id, status)
             logging.warning(f'Изменен статус управления дроном ID: {drone_id} - LOCK')
-            conn.commit()
+            await asyncio.to_thread(conn.commit)
     except Exception as e:
-        logging.error(f'Не изменен статус упрвления дроном ID: {drone_id}! {str(e)}')
+        logging.error(f'Не изменен статус управления дроном ID: {drone_id}! {str(e)}')
 
 
-def check_drone_status_mgn(drone_id):
-    status_mgn = get_drone_status_mgn(drone_id)
+async def check_drone_status_mgn(drone_id):
+    status_mgn = await asyncio.to_thread(get_drone_status_mgn, drone_id)
     if status_mgn == 'release':
         return status_mgn
 
@@ -123,14 +134,14 @@ def index():
 
 
 @app.route('/login', methods=['GET', 'POST'])
-def login():
+async def login():
     if request.method == 'POST':
         login = request.form['login']
         password = request.form['password']
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM tbl_users WHERE login = ? AND password = ?", (login, password))
-            user = cursor.fetchone()
+            await asyncio.to_thread(cursor.execute, "SELECT * FROM tbl_users WHERE login = ? AND password = ?", (login, password))
+            user = await asyncio.to_thread(cursor.fetchone)
             if user:
                 session['token'] = generate_token(login)
                 response = redirect(url_for('list_drones'))
@@ -150,34 +161,34 @@ def logout():
 
 @app.route('/drones', methods=['GET'])
 @log_execution_time
-def list_drones():
+async def list_drones():
     token = session.get('token')
     result = check_session_token(token)
 
     if isinstance(result, str):
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
-            drones = drone_repository.get_drones_with_id(order_by='id')
+            drones = await asyncio.to_thread(drone_repository.get_drones_with_id, order_by='id')
             return render_template('list_drones.html', drones=drones)
     return result
 
 
 @app.route('/drones/add', methods=['GET', 'POST'])
 @log_execution_time
-def add_drone():
+async def add_drone():
     token = session.get('token')
     result = check_session_token(token)
 
     if isinstance(result, str):
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
             if request.method == 'POST':
                 try:
-                    drone_id = {'id': drone_repository.get_drone_id()}
+                    drone_id = {'id': await asyncio.to_thread(drone_repository.get_drone_id)}
                     drone_data_without_id = {key: request.form[key] for key in request.form}
                     drone_data = {**drone_id, **drone_data_without_id}
                     drone = Drone(**drone_data)
-                    drone_repository.add_drone(drone)
+                    await asyncio.to_thread(drone_repository.add_drone, drone)
                     logging.info(f'В систему добавлен дрон с ID: {drone_id}')
                     return redirect(url_for('list_drones'))
                 except Exception as e:
@@ -188,72 +199,73 @@ def add_drone():
 
 @app.route('/drones/update/<int:drone_id>', methods=['GET', 'POST'])
 @log_execution_time
-def update_drone(drone_id):
+async def update_drone(drone_id):
     token = session.get('token')
     result = check_session_token(token)
 
     if isinstance(result, str):
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
             try:
                 if request.method == 'POST':
                     drone_data = {key: request.form[key] for key in request.form}
-                    drone_repository.update_drone(drone_id, **drone_data)
+                    await drone_repository.update_drone(drone_id, **drone_data)
                     logging.warning(f'В системе обновлен дрон с ID: {drone_id}')
                     return redirect(url_for('list_drones'))
-                drone = drone_repository.get_drone(drone_id)
+
+                drone = await drone_repository.get_drone(drone_id)
                 return render_template('update.html', drone=drone)
             except Exception as e:
                 logging.error(f'Произошла ошибка при обновлении дрона: {str(e)}')
+
     return result
 
 
 @app.route('/drones/delete/<int:drone_id>', methods=['POST'])
 @log_execution_time
-def delete_drone(drone_id):
+async def delete_drone(drone_id):
     token = session.get('token')
     result = check_session_token(token)
 
     if isinstance(result, str):
-        with DBConnectionManager(factory, path_to_db='prod.db') as conn:
+        async with DBConnectionManager(factory, path_to_db='prod.db') as conn:
             drone_repository = SQLiteIDroneRepository(conn)
-            drone_repository.remove_drone(drone_id)
+            await drone_repository.remove_drone(drone_id)
             logging.warning(f'Из системы удален дрон с ID: {drone_id}')
             return redirect(url_for('list_drones'))
+
     return result
 
 
 @app.route('/drones/control/<int:drone_id>', methods=['POST'])
-def control_drone(drone_id):
+async def control_drone(drone_id):
     token = session.get('token')
     result = check_session_token(token)
-    if check_drone_status_mgn(drone_id) == 'release':
-        set_drone_status_mgn(drone_id, 'lock')
+
+    if await check_drone_status_mgn(drone_id) == 'release':
+        await set_drone_status_mgn(drone_id, 'lock')
 
         if isinstance(result, str):
-            return render_template('control_drone.html',
-                                   token=token, drone_id=drone_id)
+            return render_template('control_drone.html', token=token, drone_id=drone_id)
         return result
     else:
-        return jsonify({"error": f'Доступ к управлению заблокирован!'
-                                 f'Дроном ID: {drone_id} управляет другой оператор.'}), 403
+        return jsonify(
+            {"error": f'Доступ к управлению заблокирован! Дроном ID: {drone_id} управляет другой оператор.'}), 403
 
 
 @app.route('/drones/release/<int:drone_id>', methods=['GET', 'POST'])
-def drone_release(drone_id):
+async def drone_release(drone_id):
     """Функция для выхода из формы управления дроном"""
-    set_drone_status_mgn(drone_id, 'release')
+    await set_drone_status_mgn(drone_id, 'release')
     return redirect(url_for('list_drones', drone_id=drone_id))
 
 
-# Для демонстрации получения телеметрии с дрона.
 # Задаем начальные параметры
 center_latitude = np.random.uniform(-90, 90)  # Широта центра
 center_longitude = np.random.uniform(-180, 180)  # Долгота центра
 battery_level = 100.0  # Начальный уровень заряда
 log_data = []  # Хранение логов
 telemetry_data = {}  # Переменная для хранения данных телеметрии
-
 
 def generate_telemetry():
     """Генератор случайной телеметрии."""
@@ -294,11 +306,12 @@ def generate_telemetry():
     log_data.append(log_message)
 
 
-@app.route('/telemetry')
-def telemetry():
+@socketio.on('request_telemetry')
+async def handle_request_telemetry():
+    """Обработчик для запроса телеметрии."""
     generate_telemetry()
-    return jsonify({"telemetry": telemetry_data["telemetry"], "log": "\n".join(log_data)})
+    emit('telemetry_update', {"telemetry": telemetry_data["telemetry"], "log": "\n".join(log_data)})
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1')
+    socketio.run(app, debug=True, host='127.0.0.1')
