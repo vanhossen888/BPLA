@@ -189,7 +189,7 @@ class SQLiteDBFactory(DBFactory):
         logging.info('Работаем с БД SQLite')
         try:
             # Подключение к базе данных
-            conn = sqlite3.connect(path_to_db)
+            conn = sqlite3.connect(path_to_db, check_same_thread=False)
             logging.info(f"Подключение к БД установлено")
             return conn
         except sqlite3.Error as e:
